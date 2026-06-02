@@ -29,6 +29,7 @@ use warp::http::StatusCode;
 use warp::{http, Filter};
 
 use crate::config::BackendConfig;
+use crate::catchall;
 use crate::http::v0::check_email::post::{with_config, CheckEmailRequest};
 use crate::http::v1::bulk::post::publish_task;
 use crate::http::{check_header, ReacherResponseError};
@@ -44,8 +45,17 @@ async fn handle_without_worker(
 ) -> Result<Vec<u8>, warp::Rejection> {
 	info!(target: LOG_TARGET, email=body.to_email, "Starting verification");
 	let input = body.to_check_email_input(Arc::clone(&config));
-	let result = check_email(&input).await;
-	let result_ok = Ok(result);
+	// let result = check_email(&input).await;
+	// let result_ok = Ok(result);
+	let mut result = check_email(&input).await;
+
+   catchall::apply_catchall(
+    &mut result,
+    body.catchall_url.as_deref(),
+    body.catchall_api_key.as_deref(),
+    ).await;
+
+let result_ok = Ok(result);
 
 	// Increment counters after successful verification
 	throttle_manager.increment_counters().await;
@@ -150,9 +160,36 @@ async fn handle_with_worker(
 				.map_err(ReacherResponseError::from)?;
 
 			match single_shot_response {
-				SingleShotReply::Ok(body) => {
-					return Ok(body);
-				}
+				// SingleShotReply::Ok(body) => {
+				// 	return Ok(body);
+				// }
+				SingleShotReply::Ok(mut bytes) => {
+    if let Ok(mut value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+        let is_risky = value["is_reachable"].as_str() == Some("risky");
+        let is_catch_all = value["smtp"]["is_catch_all"].as_bool().unwrap_or(false);
+        let email = value["input"].as_str().unwrap_or("").to_string();
+
+        if is_risky && is_catch_all {
+            if let (Some(url), Some(api_key)) = (
+                body.catchall_url.as_deref(),
+                body.catchall_api_key.as_deref(),
+            ) {
+                if let Ok(new_status) = catchall::check_catchall(&email, url, api_key).await {
+                    let status_str = match new_status {
+                        check_if_email_exists::Reachable::Safe => "safe",
+                        check_if_email_exists::Reachable::Invalid => "invalid",
+                        check_if_email_exists::Reachable::Risky => "risky",
+                        check_if_email_exists::Reachable::Unknown => "unknown",
+                    };
+                    value["is_reachable"] = serde_json::Value::String(status_str.to_string());
+                    bytes = serde_json::to_vec(&value).unwrap_or(bytes);
+                }
+            }
+        }
+    }
+    return Ok(bytes);
+}
+
 				SingleShotReply::Err((e, code)) => {
 					let status_code =
 						StatusCode::from_u16(code).map_err(ReacherResponseError::from)?;

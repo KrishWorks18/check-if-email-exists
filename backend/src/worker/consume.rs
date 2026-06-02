@@ -40,11 +40,15 @@ pub async fn setup_rabbit_mq(
 	backend_name: &str,
 	config: &RabbitMQConfig,
 ) -> Result<Channel, anyhow::Error> {
+	// let options = ConnectionProperties::default()
+	// 	// Use tokio executor and reactor.
+	// 	.with_executor(tokio_executor_trait::Tokio::current())
+	// 	.with_reactor(tokio_reactor_trait::Tokio)
+	// 	.with_connection_name(backend_name.into());
 	let options = ConnectionProperties::default()
-		// Use tokio executor and reactor.
-		.with_executor(tokio_executor_trait::Tokio::current())
-		.with_reactor(tokio_reactor_trait::Tokio)
-		.with_connection_name(backend_name.into());
+    .with_executor(tokio_executor_trait::Tokio::current())
+    .with_connection_name(backend_name.into());
+
 
 	let conn = Connection::connect(&config.url, options)
 		.await

@@ -26,6 +26,8 @@ use warp::{http, Filter};
 use super::backwardcompat::{BackwardCompatHotmailB2CVerifMethod, BackwardCompatYahooVerifMethod};
 use crate::config::BackendConfig;
 use crate::http::{check_header, ReacherResponseError};
+use crate::catchall;
+
 
 /// The request body for the `POST /v0/check_email` endpoint.
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -39,6 +41,9 @@ pub struct CheckEmailRequest {
 	// The following fields are for backward compatibility.
 	pub yahoo_verif_method: Option<BackwardCompatYahooVerifMethod>,
 	pub hotmailb2c_verif_method: Option<BackwardCompatHotmailB2CVerifMethod>,
+	pub catchall_url: Option<String>,
+    pub catchall_api_key: Option<String>,
+
 }
 
 impl CheckEmailRequest {
@@ -123,9 +128,20 @@ async fn http_handler(
 		)
 	} else {
 		// Run the future to check an email.
-		Ok(warp::reply::json(
-			&check_email(&body.to_check_email_input(Arc::clone(&config))).await,
-		))
+		// Ok(warp::reply::json(
+		// 	&check_email(&body.to_check_email_input(Arc::clone(&config))).await,
+		// ))
+		
+		let mut output = check_email(&body.to_check_email_input(Arc::clone(&config))).await;
+
+     catchall::apply_catchall(
+    &mut output,
+    body.catchall_url.as_deref(),
+    body.catchall_api_key.as_deref(),
+     ).await;
+
+Ok(warp::reply::json(&output))
+
 	}
 }
 

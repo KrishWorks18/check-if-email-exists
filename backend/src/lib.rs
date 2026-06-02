@@ -19,5 +19,5 @@ pub mod http;
 pub mod storage;
 pub mod throttle;
 pub mod worker;
-
+pub mod catchall;
 const CARGO_PKG_VERSION: &str = env!("CARGO_PKG_VERSION");
